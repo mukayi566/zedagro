@@ -1,26 +1,259 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --primary: #1a4231;
+  --primary-light: #2a6449;
+  --primary-dark: #0e2419;
+  --accent: #e8f0ec;
+  --background-light: #f6f8f7;
+  --background-dark: #151d1a;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@theme {
+  --color-primary: #1a4231;
+  --color-primary-light: #2a6449;
+  --color-primary-50: #e8f0ec;
+  --color-primary-100: #c5d9cc;
+  --color-primary-200: #9ebfab;
+  --color-primary-300: #72a488;
+  --color-primary-400: #4d8d6b;
+  --color-primary-500: #1a4231;
+  --color-primary-600: #163825;
+  --color-primary-700: #112c1c;
+  --color-primary-800: #0c2015;
+  --color-primary-900: #07140d;
+  --color-bg-light: #f6f8f7;
+  --color-bg-dark: #151d1a;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: #f6f8f7;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1a4231;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2a6449;
+}
+
+/* Custom animations */
+@keyframes pulse-green {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes truck-move {
+  0% {
+    transform: translateX(-5px);
+  }
+
+  50% {
+    transform: translateX(5px);
+  }
+
+  100% {
+    transform: translateX(-5px);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in-right 0.4s ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
+}
+
+.animate-truck {
+  animation: truck-move 2s ease-in-out infinite;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(26, 66, 49, 0.1);
+}
+
+/* Sidebar transitions */
+.sidebar-item {
+  transition: all 0.2s ease;
+}
+
+.sidebar-item:hover {
+  background-color: rgba(26, 66, 49, 0.08);
+  color: #1a4231;
+  padding-left: 18px;
+}
+
+/* Card hover effects */
+.card-hover {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(26, 66, 49, 0.12);
+}
+
+/* Status badge animations */
+.status-pulse {
+  animation: pulse-green 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Progress bar animation */
+.progress-bar {
+  transition: width 1s ease-in-out;
+}
+
+/* Table row hover */
+.table-row-hover:hover {
+  background-color: rgba(26, 66, 49, 0.04);
+}
+
+/* Navigation active indicator */
+.nav-active {
+  position: relative;
+}
+
+.nav-active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background-color: #1a4231;
+  border-radius: 0 2px 2px 0;
+}
+
+/* Custom checkbox */
+.custom-check:checked {
+  background-color: #1a4231;
+  border-color: #1a4231;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #1a4231 0%, #2a6449 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Map placeholder */
+.map-bg {
+  background: linear-gradient(135deg, #1a4231 0%, #2a6449 40%, #4d8d6b 100%);
+}
+
+/* Toast notification */
+.toast {
+  animation: slide-in-right 0.4s ease-out;
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid #1a4231;
+  outline-offset: 2px;
+}
+
+/* Form inputs */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+select,
+textarea {
+  border: 1px solid rgba(26, 66, 49, 0.15);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #1a4231;
+  box-shadow: 0 0 0 3px rgba(26, 66, 49, 0.1);
+}
+
+/* Button transitions */
+.btn-primary {
+  background-color: #1a4231;
+  color: white;
+  transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
+}
+
+.btn-primary:hover {
+  background-color: #2a6449;
+  box-shadow: 0 4px 12px rgba(26, 66, 49, 0.3);
+}
+
+.btn-primary:active {
+  transform: translateY(1px);
+}
+
+/* Chart tooltips */
+.recharts-tooltip-wrapper {
+  border-radius: 8px !important;
 }
