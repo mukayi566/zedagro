@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Topbar from "../components/Topbar";
+import { useLayout } from "../components/LayoutContext";
 
 type SurveyStatus = "pending" | "in_progress" | "completed" | "flagged";
 
@@ -63,6 +64,7 @@ const statusConfig: Record<SurveyStatus, { label: string; color: string; icon: s
 };
 
 export default function DroneSurveysClient({ profile }: { profile: any }) {
+    const { isSidebarCollapsed } = useLayout();
     const isAdmin = profile?.role === "admin";
 
     const tabs = isAdmin ? [
@@ -144,19 +146,19 @@ export default function DroneSurveysClient({ profile }: { profile: any }) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-8 space-y-8 animate-fade-in custom-scrollbar">
-                {activeTab === "map" && <MapSection surveys={mockSurveys} />}
-                {activeTab === "list" && <ListSection surveys={surveys} title={isAdmin ? "Full Fleet Activity" : "Mission History"} isAdmin={isAdmin} />}
-                {activeTab === "flagged" && <ListSection surveys={surveys} title="Critical Discrepancies" isAdmin={isAdmin} />}
-                {activeTab === "conduct" && <ConductSection profile={profile} />}
-                {activeTab === "gallery" && <GallerySection surveys={surveys} />}
+                {activeTab === "map" && <MapSection surveys={mockSurveys} isSidebarCollapsed={isSidebarCollapsed} />}
+                {activeTab === "list" && <ListSection surveys={surveys} title={isAdmin ? "Full Fleet Activity" : "Mission History"} isAdmin={isAdmin} isSidebarCollapsed={isSidebarCollapsed} />}
+                {activeTab === "flagged" && <ListSection surveys={surveys} title="Critical Discrepancies" isAdmin={isAdmin} isSidebarCollapsed={isSidebarCollapsed} />}
+                {activeTab === "conduct" && <ConductSection profile={profile} isSidebarCollapsed={isSidebarCollapsed} />}
+                {activeTab === "gallery" && <GallerySection surveys={surveys} isSidebarCollapsed={isSidebarCollapsed} />}
             </div>
         </div>
     );
 }
 
-function MapSection({ surveys }: { surveys: Survey[] }) {
+function MapSection({ surveys, isSidebarCollapsed }: { surveys: Survey[], isSidebarCollapsed: boolean }) {
     return (
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-8">
+        <div className={`grid grid-cols-1 ${isSidebarCollapsed ? "xl:grid-cols-4" : "2xl:grid-cols-4"} gap-8 transition-all duration-300`}>
             <div className="xl:col-span-3 space-y-6">
                 <div className="bg-[#0f172a] rounded-[2.5rem] border border-slate-800 shadow-2xl shadow-slate-900/40 h-[650px] relative overflow-hidden group">
                     <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, rgba(255,255,255,0.05) 1px, transparent 0)', backgroundSize: '32px 32px' }}></div>
@@ -292,7 +294,7 @@ function MapSection({ surveys }: { surveys: Survey[] }) {
     );
 }
 
-function ListSection({ surveys, title, isAdmin }: { surveys: Survey[], title: string, isAdmin: boolean }) {
+function ListSection({ surveys, title, isAdmin, isSidebarCollapsed }: { surveys: Survey[], title: string, isAdmin: boolean, isSidebarCollapsed: boolean }) {
     return (
         <div className="bg-white rounded-[2.5rem] border border-slate-100 shadow-xl overflow-hidden shadow-slate-200/40">
             <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
@@ -399,7 +401,7 @@ function ListSection({ surveys, title, isAdmin }: { surveys: Survey[], title: st
     );
 }
 
-function ConductSection({ profile }: { profile: any }) {
+function ConductSection({ profile, isSidebarCollapsed }: { profile: any, isSidebarCollapsed: boolean }) {
     const [step, setStep] = useState(1);
     const [selectedDrone, setSelectedDrone] = useState<string | null>(null);
     const [isFlying, setIsFlying] = useState(false);
@@ -418,7 +420,7 @@ function ConductSection({ profile }: { profile: any }) {
     };
 
     return (
-        <div className="max-w-6xl mx-auto space-y-10 animate-fade-in pb-12">
+        <div className={`max-w-6xl mx-auto space-y-10 animate-fade-in pb-12 transition-all duration-300`}>
             <div className="flex items-center justify-between">
                 <div className="space-y-1">
                     <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Mission Architect</h2>
@@ -570,7 +572,7 @@ function ConductSection({ profile }: { profile: any }) {
     );
 }
 
-function GallerySection({ surveys }: { surveys: Survey[] }) {
+function GallerySection({ surveys, isSidebarCollapsed }: { surveys: Survey[], isSidebarCollapsed: boolean }) {
     const allImages = surveys.flatMap(s => s.images.map(img => ({ url: img, farmer: s.farmerName, zedId: s.zedId, date: s.date })));
 
     return (
@@ -582,7 +584,7 @@ function GallerySection({ surveys }: { surveys: Survey[] }) {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-8">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSidebarCollapsed ? "lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5" : "lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"} gap-8 transition-all duration-300`}>
                 {allImages.length > 0 ? allImages.map((img, i) => (
                     <div key={i} className="bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden group cursor-pointer hover:shadow-2xl transition-all duration-700 hover:-translate-y-2">
                         <div className="aspect-[4/5] bg-slate-100 overflow-hidden relative">

@@ -53,15 +53,18 @@ export interface Payment {
 }
 
 export interface LogisticsTrip {
-    id: string;
-    truckId: string;
-    driver: string;
+    id: number;
+    truckId?: string;
+    driver?: string;
+    fieldAgentId?: string;
+    driverId?: string;
+    farmerId?: string;
     farmerName: string;
     origin: string;
     destination: string;
     produce: string;
     weight: number;
-    status: "scheduled" | "in_transit" | "delivered" | "pending";
+    status: "ready" | "assigned" | "loading" | "in_transit" | "arrived" | "delivered";
     scheduledDate: string;
     progress: number;
     eta?: string;
@@ -359,9 +362,10 @@ export const payments: Payment[] = [
 // =========================================================
 export const logisticsTrips: LogisticsTrip[] = [
     {
-        id: "1",
+        id: 1,
         truckId: "TRK-882",
         driver: "Chanda Musonda",
+        farmerId: "farmer_88",
         farmerName: "Mwape Farms Ltd",
         origin: "Farm (Mansa)",
         destination: "FRA Storage (Ndola)",
@@ -373,9 +377,10 @@ export const logisticsTrips: LogisticsTrip[] = [
         eta: "2h 15m",
     },
     {
-        id: "2",
+        id: 2,
         truckId: "TRK-410",
         driver: "Kelvin Phiri",
+        farmerId: "farmer_55",
         farmerName: "Green Valley Co-op",
         origin: "Farm (Mazabuka)",
         destination: "FRA Storage (Lusaka)",
@@ -387,35 +392,36 @@ export const logisticsTrips: LogisticsTrip[] = [
         eta: "5h 40m",
     },
     {
-        id: "3",
+        id: 3,
         truckId: "TRK-902",
         driver: "Sarah Zulu",
+        farmerId: "farmer_22",
         farmerName: "Kalomo Smallholders",
         origin: "Farm (Kalomo)",
         destination: "FRA Storage (Choma)",
         produce: "Maize",
         weight: 15,
-        status: "scheduled",
+        status: "assigned",
         scheduledDate: "2026-03-09",
         progress: 0,
     },
     {
-        id: "4",
-        truckId: "TRK-115",
-        driver: "Peter Nkonde",
+        id: 4,
+        farmerId: "farmer_01",
         farmerName: "Eastern Cooperative",
         origin: "Farm (Chipata)",
         destination: "FRA Storage (Chipata)",
         produce: "Cotton",
         weight: 8,
-        status: "pending",
+        status: "ready",
         scheduledDate: "2026-03-09",
         progress: 0,
     },
     {
-        id: "5",
+        id: 5,
         truckId: "TRK-554",
         driver: "Alice Phiri",
+        farmerId: "farmer_12",
         farmerName: "Kabwe Growers",
         origin: "Farm (Kabwe)",
         destination: "FRA Storage (Lusaka)",

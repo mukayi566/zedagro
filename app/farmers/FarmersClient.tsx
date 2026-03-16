@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Topbar from "../components/Topbar";
 import { Farmer } from "../lib/data";
 import { zedagroApi } from "../lib/api";
+import { useLayout } from "../components/LayoutContext";
 
 const statusConfig: Record<string, { label: string; color: string; icon: string }> = {
     drone_verified: { label: "Drone Verified", color: "bg-emerald-100 text-emerald-700", icon: "check_circle" },
@@ -13,6 +14,7 @@ const statusConfig: Record<string, { label: string; color: string; icon: string 
 };
 
 export default function FarmersClient({ profile }: { profile: any }) {
+    const { isSidebarCollapsed } = useLayout();
     const [farmersList, setFarmersList] = useState<Farmer[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -105,9 +107,9 @@ export default function FarmersClient({ profile }: { profile: any }) {
                 </div>
 
                 {/* Main Split View */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className={`grid grid-cols-1 ${isSidebarCollapsed ? "lg:grid-cols-3" : "xl:grid-cols-3"} gap-6 transition-all duration-300`}>
                     {/* Farmer List */}
-                    <div className={`${selectedFarmer ? "hidden lg:block lg:col-span-2" : "col-span-1 lg:col-span-3"} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden`}>
+                    <div className={`${selectedFarmer ? `hidden ${isSidebarCollapsed ? "lg:block lg:col-span-2" : "xl:block xl:col-span-2"}` : `col-span-1 ${isSidebarCollapsed ? "lg:col-span-3" : "xl:col-span-3"}`} bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden transition-all duration-300`}>
                         <div className="overflow-x-auto no-scrollbar">
                             <table className="w-full text-left">
                                 <thead className="bg-slate-50/50">
@@ -181,7 +183,7 @@ export default function FarmersClient({ profile }: { profile: any }) {
 
                     {/* Farmer Detail Panel */}
                     {selectedFarmer && (
-                        <div className="lg:col-span-1 space-y-4">
+                        <div className={`${isSidebarCollapsed ? "lg:col-span-1" : "xl:col-span-1"} space-y-4 transition-all duration-300 animate-fade-in`}>
                             {/* Mobile Back Button */}
                             <button
                                 onClick={() => setSelectedFarmer(null)}

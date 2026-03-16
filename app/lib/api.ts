@@ -29,6 +29,18 @@ export async function postToApi<T = unknown>(endpoint: string, data: unknown): P
     return response.json() as Promise<T>;
 }
 
+export async function patchToApi<T = unknown>(endpoint: string, data: unknown): Promise<T> {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+        throw new Error(`API Error ${response.status}: ${response.statusText}`);
+    }
+    return response.json() as Promise<T>;
+}
+
 // ─── Typed API helpers ────────────────────────────────────────────────────────
 
 import type {
@@ -53,6 +65,11 @@ export const zedagroApi = {
 
     // Logistics
     getLogistics: () => fetchFromApi<LogisticsTrip[]>("/logistics"),
+    createLogistics: (d: any) => postToApi<LogisticsTrip>("/logistics", d),
+    assignLogistics: (id: number, d: { truckId: string; driverId: string; driver: string }) =>
+        patchToApi<LogisticsTrip>(`/logistics/${id}/assign`, d),
+    updateLogisticsStatus: (id: number, d: { status: string; progress?: number; eta?: string }) =>
+        patchToApi<LogisticsTrip>(`/logistics/${id}/status`, d),
 
     // Storage Depots
     getStorage: () => fetchFromApi<StorageDepot[]>("/storage"),

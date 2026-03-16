@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Topbar from "../components/Topbar";
 import { Payment } from "../lib/data";
 import { zedagroApi } from "../lib/api";
+import { useLayout } from "../components/LayoutContext";
 
 const statusConfig: Record<string, { label: string; color: string; icon: string; bg: string }> = {
     pending: { label: "Pending", color: "text-amber-700", icon: "schedule", bg: "bg-amber-100" },
@@ -19,6 +20,7 @@ const methodConfig: Record<string, { label: string; color: string; icon: string;
 };
 
 export default function PaymentsClient({ profile }: { profile: any }) {
+    const { isSidebarCollapsed } = useLayout();
     const [payments, setPayments] = useState<Payment[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [showBulkModal, setShowBulkModal] = useState(false);
@@ -68,14 +70,14 @@ export default function PaymentsClient({ profile }: { profile: any }) {
             <div className="p-4 md:p-6 space-y-6 animate-fade-in">
                 {/* Loading Skeleton */}
                 {isLoading && (
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className={`grid grid-cols-2 ${isSidebarCollapsed ? "lg:grid-cols-4" : "xl:grid-cols-4"} gap-4 transition-all duration-300`}>
                         {[...Array(4)].map((_, i) => (
                             <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 animate-pulse h-24" />
                         ))}
                     </div>
                 )}
                 {/* Stats Cards */}
-                {!isLoading && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                {!isLoading && <div className={`grid grid-cols-2 ${isSidebarCollapsed ? "lg:grid-cols-4" : "xl:grid-cols-4"} gap-4 transition-all duration-300`}>
                     {[
                         { label: "Completed", value: `K${(totalCompleted / 1000).toFixed(1)}K`, icon: "check_circle", color: "text-emerald-600", bg: "bg-emerald-50" },
                         { label: "Pending", value: `K${(totalPending / 1000).toFixed(1)}K`, icon: "schedule", color: "text-amber-600", bg: "bg-amber-50" },
@@ -95,7 +97,7 @@ export default function PaymentsClient({ profile }: { profile: any }) {
                 </div>}
 
                 {/* Integration Status Providers */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSidebarCollapsed ? "lg:grid-cols-3" : "xl:grid-cols-3"} gap-4 transition-all duration-300`}>
                     {[
                         { name: "MTN MoMo", icon: "phone_android", desc: "Sandbox · LIVE", color: "text-yellow-600", bg: "bg-white border-yellow-100" },
                         { name: "Airtel Money", icon: "phone_iphone", desc: "Sandbox · LIVE", color: "text-red-500", bg: "bg-white border-red-100" },

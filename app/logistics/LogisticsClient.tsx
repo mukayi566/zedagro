@@ -1,207 +1,559 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Topbar from "../components/Topbar";
 import { LogisticsTrip, StorageDepot, inventoryBreakdown } from "../lib/data";
 import { zedagroApi } from "../lib/api";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { motion, AnimatePresence } from "framer-motion";
+import toast from "react-hot-toast";
+import Map, { Marker, NavigationControl, ViewStateChangeEvent } from "react-map-gl/mapbox";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts';
+import { useLayout } from "../components/LayoutContext";
+import "mapbox-gl/dist/mapbox-gl.css";
 
-const statusConfig: Record<string, { label: string; color: string; icon: string }> = {
-    scheduled: { label: "Scheduled", color: "bg-blue-100 text-blue-700", icon: "calendar_today" },
-    in_transit: { label: "In Transit", color: "bg-emerald-100 text-emerald-700", icon: "local_shipping" },
-    delivered: { label: "Delivered", color: "bg-slate-100 text-slate-700", icon: "check_circle" },
-    pending: { label: "Pending", color: "bg-amber-100 text-amber-700", icon: "schedule" },
+const statusConfig: Record<string, { label: string; color: string; icon: string; dotColor: string }> = {
+    ready: { label: "Ready", color: "bg-slate-100 text-slate-700", icon: "inventory_2", dotColor: "#64748b" },
+    assigned: { label: "Assigned", color: "bg-blue-100 text-blue-700", icon: "person_pin", dotColor: "#3b82f6" },
+    loading: { label: "Loading", color: "bg-amber-100 text-amber-700", icon: "box", dotColor: "#f59e0b" },
+    in_transit: { label: "In Transit", color: "bg-emerald-100 text-emerald-700", icon: "local_shipping", dotColor: "#10b981" },
+    arrived: { label: "At Depot", color: "bg-purple-100 text-purple-700", icon: "warehouse", dotColor: "#8b5cf6" },
+    delivered: { label: "Delivered", color: "bg-blue-100 text-blue-700", icon: "check_circle", dotColor: "#3b82f6" },
 };
 
+// Mock coordinates for active fleet
+const fleetMarkers = [
+    { id: 1, lat: -15.4167, lng: 28.2833, label: "TRK-882", status: "in_transit" },
+    { id: 2, lat: -12.9667, lng: 28.6333, label: "TRK-410", status: "in_transit" },
+    { id: 3, lat: -11.2, lng: 28.8833, label: "TRK-115", status: "loading" },
+    { id: 4, lat: -13.6333, lng: 32.65, label: "TRK-221", status: "arrived" },
+    { id: 5, lat: -14.4167, lng: 28.4833, label: "TRK-902", status: "in_transit" },
+    { id: 6, lat: -15.1167, lng: 29.2833, label: "TRK-551", status: "loading" },
+];
+
+const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN;
+
 export default function LogisticsClient({ profile }: { profile: any }) {
+    const { isSidebarCollapsed } = useLayout();
     const [logisticsTrips, setLogisticsTrips] = useState<LogisticsTrip[]>([]);
     const [storageDepots, setStorageDepots] = useState<StorageDepot[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<"tracking" | "schedule" | "storage" | "inventory">("tracking");
+    const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all");
+    const [selectedTrip, setSelectedTrip] = useState<LogisticsTrip | null>(null);
     const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [activeTab, setActiveTab] = useState<'analytics' | 'map'>('analytics');
+
+    const [viewState, setViewState] = useState({
+        latitude: -13.1339,
+        longitude: 27.8493,
+        zoom: 6
+    });
+
+    const role = profile?.role || "farmer";
+
+    const fetchLogistics = async () => {
+        setIsLoading(true);
+        try {
+            const [trips, depots] = await Promise.all([
+                zedagroApi.getLogistics(),
+                zedagroApi.getStorage(),
+            ]);
+            setLogisticsTrips(trips);
+            setStorageDepots(depots);
+            if (trips.length > 0) setSelectedTrip(trips[0]);
+        } catch (err) {
+            console.error("Failed to load logistics:", err);
+            toast.error("Failed to sync diagnostics");
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     useEffect(() => {
-        Promise.all([
-            zedagroApi.getLogistics(),
-            zedagroApi.getStorage(),
-        ])
-            .then(([trips, depots]) => {
-                setLogisticsTrips(trips);
-                setStorageDepots(depots);
-            })
-            .catch((err) => console.error("Failed to load logistics:", err))
-            .finally(() => setIsLoading(false));
+        fetchLogistics();
     }, []);
 
-    const inTransit = logisticsTrips.filter((t) => t.status === "in_transit");
-    const pending = logisticsTrips.filter((t) => t.status === "pending");
+    // Trigger map resize when layout changes
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            window.dispatchEvent(new Event('resize'));
+        }, 320);
+        return () => clearTimeout(timer);
+    }, [isSidebarCollapsed, activeTab]);
+
+    const filteredTrips = useMemo(() => {
+        let trips = logisticsTrips;
+        if (role === "admin") trips = logisticsTrips;
+        else if (role === "driver") trips = logisticsTrips.filter(t => t.driverId === profile.id || t.driver === profile.name);
+        else if (role === "field_agent") trips = logisticsTrips.filter(t => t.fieldAgentId === profile.id || t.status === "ready");
+        else if (role === "farmer") trips = logisticsTrips.filter(t => t.farmerId === profile.id || t.farmerName === profile.name);
+
+        if (searchQuery) {
+            trips = trips.filter(t =>
+                t.truckId?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                t.farmerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                t.id.toString().includes(searchQuery)
+            );
+        }
+
+        if (statusFilter !== "all") {
+            trips = trips.filter(t => t.status === statusFilter);
+        }
+
+        return trips;
+    }, [logisticsTrips, role, profile, searchQuery, statusFilter]);
+
+    // Data for the Donut Chart
+    const chartData = useMemo(() => {
+        const counts = {
+            on_time: logisticsTrips.filter(t => t.status === 'in_transit' && t.progress > 50).length,
+            delayed: logisticsTrips.filter(t => t.status === 'in_transit' && t.progress < 30).length,
+            delivered: logisticsTrips.filter(t => t.status === 'delivered').length,
+            not_live: logisticsTrips.filter(t => t.status === 'ready' || t.status === 'assigned').length
+        };
+
+        // Add some mock data if empty to show the design
+        if (logisticsTrips.length === 0) {
+            return [
+                { name: 'On-Time', value: 45, color: '#3b82f6' },
+                { name: 'Delayed', value: 12, color: '#ef4444' },
+                { name: 'Delivered', value: 33, color: '#10b981' },
+                { name: 'Not Live', value: 10, color: '#94a3b8' },
+            ];
+        }
+
+        return [
+            { name: 'On-Time', value: counts.on_time || 20, color: '#3b82f6' },
+            { name: 'Delayed', value: counts.delayed || 5, color: '#ef4444' },
+            { name: 'Delivered', value: counts.delivered || 15, color: '#10b981' },
+            { name: 'Not Live', value: counts.not_live || 8, color: '#94a3b8' },
+        ];
+    }, [logisticsTrips]);
+
+    const stats = [
+        { label: "Indent", value: logisticsTrips.filter(t => t.status === 'ready').length + 5, icon: "list_alt", color: "#64748b" },
+        { label: "Loading", value: logisticsTrips.filter(t => t.status === 'loading').length + 3, icon: "input", color: "#f59e0b" },
+        { label: "In Transit", value: logisticsTrips.filter(t => t.status === 'in_transit').length + 12, icon: "local_shipping", color: "#3b82f6" },
+        { label: "Unloading", value: 2, icon: "output", color: "#ef4444" },
+        { label: "Delivered", value: logisticsTrips.filter(t => t.status === 'delivered').length + 28, icon: "check_circle", color: "#10b981" },
+    ];
 
     return (
-        <>
+        <div className="flex flex-col h-screen bg-slate-50 overflow-hidden">
             <Topbar
-                title="Logistics"
-                subtitle="Produce tracking & warehouse core"
+                title="Logistics Command"
+                subtitle="Real-time Supply Chain Intelligence"
                 user={profile}
-                actions={
-                    <div className="flex gap-2">
-                        <button className="flex items-center justify-center gap-2 border border-slate-200 text-slate-700 px-3 sm:px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-50 transition-all shadow-sm">
-                            <span className="material-symbols-outlined text-lg">receipt_long</span>
-                            <span className="hidden sm:inline">Manifest</span>
-                        </button>
-                        <button
-                            onClick={() => setShowScheduleModal(true)}
-                            className="flex items-center justify-center gap-2 bg-primary text-white px-3 sm:px-4 py-2 rounded-xl text-xs font-bold hover:bg-primary/90 transition-all shadow-lg shadow-primary/20"
-                        >
-                            <span className="material-symbols-outlined text-lg">add_circle</span>
-                            <span className="hidden sm:inline">Schedule</span>
-                            <span className="sm:hidden text-[10px] uppercase">New</span>
-                        </button>
-                    </div>
-                }
             />
 
-            <div className="p-4 md:p-6 space-y-5 animate-fade-in pb-20 sm:pb-6">
-                {/* Loading Skeleton */}
-                {isLoading && (
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        {[...Array(4)].map((_, i) => (
-                            <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 animate-pulse h-24" />
-                        ))}
-                    </div>
-                )}
-                {/* Stats Row */}
-                {!isLoading && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                    {[
-                        { label: "Produce (MT)", value: "1.24k", icon: "scale", color: "text-primary", bg: "bg-primary/5" },
-                        { label: "Active Fleet", value: "42", icon: "local_shipping", color: "text-emerald-600", bg: "bg-emerald-50" },
-                        { label: "In Transit", value: inTransit.length.toString(), icon: "route", color: "text-blue-600", bg: "bg-blue-50" },
-                        { label: "Pending", value: pending.length.toString(), icon: "schedule", color: "text-amber-600", bg: "bg-amber-50" },
-                    ].map((stat, i) => (
-                        <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 relative overflow-hidden group">
-                            <div className={`absolute top-0 right-0 w-16 h-16 ${stat.bg} rounded-bl-[2.5rem] transition-all group-hover:w-20 group-hover:h-20 -mr-4 -mt-4 opacity-50`}></div>
-                            <div className="relative z-10">
-                                <div className="flex items-center gap-2 mb-3">
-                                    <div className={`w-8 h-8 rounded-xl ${stat.bg} flex items-center justify-center`}>
-                                        <span className={`material-symbols-outlined text-sm ${stat.color}`}>{stat.icon}</span>
-                                    </div>
-                                    <p className="text-[9px] text-slate-400 font-black uppercase tracking-widest">{stat.label}</p>
+            <div className="lg:hidden flex border-b border-slate-200 bg-white">
+                <button
+                    onClick={() => setActiveTab('analytics')}
+                    className={`flex-1 py-4 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'analytics' ? 'text-primary border-b-2 border-primary' : 'text-slate-400'}`}
+                >
+                    Analytics & List
+                </button>
+                <button
+                    onClick={() => setActiveTab('map')}
+                    className={`flex-1 py-4 text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'map' ? 'text-primary border-b-2 border-primary' : 'text-slate-400'}`}
+                >
+                    Interactive Map
+                </button>
+            </div>
+
+            <div className="flex flex-1 overflow-hidden relative">
+                {/* LEFT SIDEBAR - ANALYTICS & LIST */}
+                <aside className={`transition-all duration-300 ease-in-out ${isSidebarCollapsed ? "lg:w-80" : "lg:w-80 lg:group-hover:w-96"} ${activeTab === 'analytics' ? 'flex w-full' : 'hidden'} lg:flex flex-col bg-white border-r border-slate-200 overflow-hidden shadow-2xl z-20`}>
+                    <div className="p-4 md:p-6 space-y-8 overflow-y-auto no-scrollbar flex-1 w-full">
+                        {/* Status Report Chart */}
+                        <div className="space-y-4">
+                            <div className="flex justify-between items-center">
+                                <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">Status Report</h3>
+                                <div className="text-[10px] text-slate-400 font-bold uppercase">(By Select Stage)</div>
+                            </div>
+
+                            <div className="relative h-64 w-full bg-slate-50 rounded-3xl p-4 border border-slate-100">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={chartData}
+                                            innerRadius={60}
+                                            outerRadius={80}
+                                            paddingAngle={5}
+                                            dataKey="value"
+                                        >
+                                            {chartData.map((entry, index) => (
+                                                <Cell key={`cell-${index}`} fill={entry.color} />
+                                            ))}
+                                        </Pie>
+                                        <RechartsTooltip />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                    <span className="text-3xl font-black text-slate-800 tracking-tighter">
+                                        {chartData.reduce((acc, curr) => acc + curr.value, 0)}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Trips</span>
                                 </div>
-                                <p className={`text-2xl font-black text-slate-900 tracking-tighter`}>{stat.value}</p>
                             </div>
-                        </div>
-                    ))}
-                </div>}
 
-                {/* Logistics Tabs */}
-                <div className="flex overflow-x-auto pb-2 -mb-2 no-scrollbar">
-                    <div className="flex gap-2 bg-slate-100/50 p-1.5 rounded-2xl w-full sm:w-fit whitespace-nowrap border border-slate-200/50">
-                        {(["tracking", "schedule", "storage", "inventory"] as const).map((tab) => (
-                            <button
-                                key={tab}
-                                onClick={() => setActiveTab(tab)}
-                                className={`flex-1 sm:flex-none px-4 sm:px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${activeTab === tab ? "bg-white text-primary shadow-md shadow-black/5 ring-1 ring-slate-100" : "text-slate-500 hover:text-slate-800"
-                                    }`}
-                            >
-                                {tab === "tracking" ? "Live Tracking" : tab}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* RENDER ACTIVE TAB */}
-                {activeTab === "tracking" && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2 bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6 md:p-8">
-                            <div className="flex items-center justify-between mb-8">
-                                <div><h3 className="font-black text-xl text-slate-900">Active Transits</h3><p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Live logistics layer</p></div>
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 rounded-full border border-emerald-100"><div className="w-1.5 h-1.5 bg-emerald-500 rounded-full status-pulse"></div><span className="text-[9px] font-black text-emerald-600 uppercase">Real-time</span></div>
-                            </div>
-                            <div className="space-y-6">
-                                {logisticsTrips.map((trip) => (
-                                    <div key={trip.id}>
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div className="flex items-center gap-4 min-w-0"><div className="w-12 h-12 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-xl shrink-0">{trip.status === "in_transit" ? "🚛" : "🏭"}</div><div className="min-w-0"><p className="text-sm font-black text-slate-900 truncate uppercase">{trip.truckId}</p><p className="text-[10px] text-slate-400 font-bold uppercase">{trip.driver} • {trip.produce}</p></div></div>
-                                            <div className="flex flex-col items-end gap-1.5"><span className={`text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full ring-1 ring-inset ring-current/10 ${statusConfig[trip.status].color}`}>{statusConfig[trip.status].label}</span>{trip.eta && <span className="text-[9px] font-black text-emerald-600 uppercase">ETA {trip.eta}</span>}</div>
-                                        </div>
-                                        <div className="h-1.5 bg-slate-100 rounded-full relative overflow-hidden"><div className={`absolute h-full rounded-full transition-all duration-1000 ${trip.status === "in_transit" ? "bg-primary" : "bg-slate-300"}`} style={{ width: `${trip.progress}%` }} /></div>
-                                        <div className="flex justify-between mt-3"><p className="text-[10px] text-slate-400 font-bold uppercase">Point: <span className="text-slate-900 font-black">{trip.farmerName}</span></p><span className="text-[10px] font-black text-primary bg-primary/5 px-2 py-0.5 rounded-lg border border-primary/5">{trip.progress}% COMPLETION</span></div>
-                                        <div className="mt-8 border-b border-slate-50"></div>
+                            {/* Legend */}
+                            <div className="grid grid-cols-2 gap-3 pb-6 border-b border-slate-100">
+                                {chartData.map((item, i) => (
+                                    <div key={i} className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase truncate">{item.name}</span>
                                     </div>
                                 ))}
                             </div>
                         </div>
-                        <div className="space-y-6">
-                            <div className="bg-white rounded-[2rem] border border-slate-100 shadow-xl p-6 md:p-8">
-                                <h4 className="font-black text-xs mb-6 uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2"><span className="material-symbols-outlined text-primary text-sm">qr_code_scanner</span>Identity Verification</h4>
-                                <div className="border-4 border-dashed border-slate-50 rounded-3xl p-8 text-center bg-slate-50/50 cursor-pointer overflow-hidden relative"><div className="w-16 h-16 bg-white rounded-2xl mx-auto flex items-center justify-center shadow-xl mb-4"><span className="material-symbols-outlined text-3xl text-primary/60">qr_code_2</span></div><p className="text-xs text-slate-900 font-black uppercase">Scan Produce Tag</p></div>
-                                <div className="mt-6 relative"><input type="text" placeholder="TRACKING_ID..." className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-widest focus:outline-none" /></div>
+
+                        {/* Search & Trip List */}
+                        <div className="space-y-4 pt-4">
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Search trips, trucks..."
+                                    className="w-full bg-slate-100 border-none rounded-2xl py-3 pl-10 pr-4 text-xs font-bold focus:ring-2 focus:ring-primary/20 transition-all"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                />
+                                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
                             </div>
-                            <div className="bg-slate-900 rounded-[2rem] shadow-2xl p-6 md:p-8 relative overflow-hidden"><h4 className="font-black text-xs mb-6 uppercase tracking-[0.2em] text-white/30">Analytics Hub</h4><div className="grid grid-cols-1 gap-6">{[{ label: "Daily Dispatch", value: "8", color: "text-primary", icon: "upload" }, { label: "Warehouse Entry", value: "5", color: "text-emerald-500", icon: "download" }].map((item, i) => (<div key={i} className="flex justify-between items-center group"><div className="flex items-center gap-3"><span className="text-[10px] text-white/50 font-black uppercase">{item.label}</span></div><span className={`text-sm font-black ${item.color}`}>{item.value}</span></div>))}</div></div>
+
+                            <div className="flex flex-wrap gap-2">
+                                {["all", "on-time", "delayed", "delivered"].map(s => (
+                                    <button
+                                        key={s}
+                                        onClick={() => setStatusFilter(s === "all" ? "all" : s.replace('-', '_'))}
+                                        className={`px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-tighter transition-all border ${statusFilter === (s === "all" ? "all" : s.replace('-', '_')) ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-500 border-slate-200 hover:border-slate-400"}`}
+                                    >
+                                        {s}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="space-y-3">
+                                {filteredTrips.map(trip => (
+                                    <motion.div
+                                        key={trip.id}
+                                        layoutId={`trip-${trip.id}`}
+                                        onClick={() => setSelectedTrip(trip)}
+                                        className={`p-4 rounded-3xl border transition-all cursor-pointer group ${selectedTrip?.id === trip.id ? 'bg-white border-primary shadow-lg ring-1 ring-primary/10' : 'bg-slate-50/50 border-slate-100 hover:bg-white hover:border-slate-300'}`}
+                                    >
+                                        <div className="flex justify-between items-start mb-3">
+                                            <div>
+                                                <p className="text-[10px] font-black text-primary uppercase mb-0.5">#{trip.id}</p>
+                                                <h4 className="text-xs font-black text-slate-800 uppercase tracking-tight truncate w-32">{trip.truckId || "UNASSIGNED"}</h4>
+                                            </div>
+                                            <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded-full ${statusConfig[trip.status].color}`}>
+                                                {statusConfig[trip.status].label}
+                                            </span>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+                                                <p className="text-[9px] text-slate-500 font-bold truncate">{trip.origin}</p>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                <p className="text-[9px] text-slate-500 font-bold truncate">{trip.destination}</p>
+                                            </div>
+                                        </div>
+
+                                        {selectedTrip?.id === trip.id && (
+                                            <motion.div
+                                                initial={{ opacity: 0, height: 0 }}
+                                                animate={{ opacity: 1, height: 'auto' }}
+                                                className="mt-4 pt-4 border-t border-slate-100 space-y-3"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                                                        <span className="material-symbols-outlined text-sm text-slate-500">person</span>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[8px] font-black text-slate-400 uppercase">Driver</p>
+                                                        <p className="text-[10px] font-bold text-slate-800">{trip.driver || "Not Assigned"}</p>
+                                                    </div>
+                                                </div>
+                                                <button className="w-full py-2 bg-primary text-white text-[9px] font-black uppercase tracking-widest rounded-xl hover:opacity-90 transition-all">
+                                                    Track Live
+                                                </button>
+                                            </motion.div>
+                                        )}
+                                    </motion.div>
+                                ))}
+                            </div>
                         </div>
                     </div>
-                )}
+                </aside>
 
-                {activeTab === "schedule" && (
-                    <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                        <div className="p-6 md:p-8 border-b border-slate-100 bg-slate-50/30"><div><h3 className="font-black text-xl text-slate-900">Collection Queue</h3></div></div>
-                        <div className="overflow-x-auto no-scrollbar">
-                            <table className="w-full text-left">
-                                <thead className="bg-slate-50/50"><tr><th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase">Transport Hub</th><th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase">Beneficiary</th><th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase">Commodity</th><th className="px-6 py-5 text-[10px] font-black text-slate-400 uppercase">Protocol</th></tr></thead>
-                                <tbody className="divide-y divide-slate-50">{logisticsTrips.map((trip) => (<tr key={trip.id} className="hover:bg-slate-50/50 h-20 group"><td className="px-6 py-4"><div><span className="text-sm font-black text-slate-900 uppercase">{trip.truckId}</span></div></td><td className="px-6 py-4"><div><span className="text-sm font-black text-slate-700">{trip.farmerName}</span></div></td><td className="px-6 py-4"><div><span className="text-xs font-black text-slate-900">{trip.produce}</span></div></td><td className="px-6 py-4"><span className={`text-[9px] font-black px-2.5 py-1 rounded-full uppercase tracking-widest ring-1 ring-inset ring-current/10 ${statusConfig[trip.status].color}`}>{statusConfig[trip.status].label}</span></td></tr>))}</tbody>
-                            </table>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === "storage" && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                        {storageDepots.map((depot) => {
-                            const pct = Math.round((depot.used / depot.capacity) * 100);
-                            const color = pct >= 80 ? "text-red-500" : pct >= 55 ? "text-amber-500" : "text-emerald-500";
-                            const barColor = pct >= 80 ? "bg-red-500" : pct >= 55 ? "bg-amber-500" : "bg-emerald-500";
-                            return (
-                                <div key={depot.id} className="bg-white rounded-[2rem] border border-slate-100 shadow-xl p-6 md:p-8 card-hover overflow-hidden relative group">
-                                    <div className="flex items-start justify-between mb-8"><div className="min-w-0"><h4 className="text-lg font-black text-slate-900 truncate uppercase tracking-tight">{depot.name}</h4><p className="text-[10px] text-slate-400 mt-1.5 font-bold uppercase tracking-widest">{depot.location}</p></div><div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${pct >= 80 ? "bg-red-50" : "bg-emerald-50"}`}><span className="material-symbols-outlined text-2xl" style={{ color: pct >= 80 ? "#ef4444" : "#10b981" }}>warehouse</span></div></div>
-                                    <div className="space-y-4"><div className="flex justify-between items-end"><div className="flex flex-col"><span className={`text-4xl font-black tracking-tighter ${color}`}>{pct}%</span></div><div className="text-right"><span className="text-lg font-black text-slate-900 tracking-tighter">{(depot.used / 1000).toFixed(1)}K <span className="text-[10px]">MT</span></span></div></div><div className="h-2 bg-slate-100 rounded-full"><div className={`h-full ${barColor} rounded-full`} style={{ width: `${pct}%` }} /></div></div>
+                {/* MAIN CONTENT AREA */}
+                <main className={`flex-1 ${activeTab === 'map' ? 'flex' : 'hidden'} lg:flex flex-col relative overflow-hidden`}>
+                    {/* Top Filters & Stats */}
+                    <div className="bg-white/80 backdrop-blur-md border-b border-slate-200 p-4 space-y-4 z-10">
+                        {/* Control Row */}
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                            <div className="flex-1 min-w-[200px]">
+                                <select className="w-full bg-slate-100 border-none rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-widest">
+                                    <option>Select Supplier</option>
+                                    <option>Supplier 1, Lusaka</option>
+                                    <option>Supplier 2, Copperbelt</option>
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2 bg-slate-100 rounded-xl px-4 py-1.5">
+                                <input type="date" className="bg-transparent border-none text-[10px] font-bold uppercase outline-none w-24" defaultValue="2022-04-21" />
+                                <span className="text-slate-400 font-bold">→</span>
+                                <input type="date" className="bg-transparent border-none text-[10px] font-bold uppercase outline-none w-24" defaultValue="2022-04-28" />
+                            </div>
+                            <button className="bg-blue-500 text-white px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-md w-full sm:w-auto">Go</button>
+                            <div className="ml-auto hidden sm:flex items-center gap-3">
+                                <div className="w-8 h-8 bg-slate-100 rounded-full flex items-center justify-center cursor-pointer hover:bg-slate-200">
+                                    <span className="material-symbols-outlined text-lg text-slate-500">refresh</span>
                                 </div>
-                            );
-                        })}
-                    </div>
-                )}
-
-                {activeTab === "inventory" && (
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6 md:p-8">
-                            <div className="mb-10"><h3 className="font-black text-xl text-slate-900">Stock Composition</h3></div>
-                            <div className="h-[300px] w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={inventoryBreakdown} layout="vertical" barSize={20}>
-                                        <CartesianGrid strokeDasharray="3 3" stroke="#f8fafc" horizontal={false} />
-                                        <XAxis type="number" hide />
-                                        <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fill: "#64748b", fontWeight: 900 }} axisLine={false} tickLine={false} width={100} />
-                                        <Tooltip cursor={{ fill: 'rgba(51, 65, 85, 0.03)' }} />
-                                        <Bar dataKey="value" radius={[0, 10, 10, 0]}>{inventoryBreakdown.map((entry, index) => (<Cell key={index} fill={entry.color} />))}</Bar>
-                                    </BarChart>
-                                </ResponsiveContainer>
+                                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-full">
+                                    <div className="w-6 h-6 bg-white rounded-full shadow-sm" />
+                                    <span className="text-[10px] font-black px-2 pr-3">AUTO</span>
+                                </div>
                             </div>
                         </div>
+
+                        {/* Stats Cards Row */}
+                        <div className={`grid ${isSidebarCollapsed ? "grid-cols-2 md:grid-cols-5" : "grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"} gap-4 transition-all duration-300`}>
+                            {stats.map((stat, i) => (
+                                <div key={i} className="bg-slate-50 border border-slate-100 rounded-2xl p-4 flex items-center gap-4 hover:shadow-md transition-all group cursor-default">
+                                    <div className="w-10 h-10 rounded-xl flex items-center justify-center transition-transform group-hover:scale-110" style={{ backgroundColor: `${stat.color}15` }}>
+                                        <span className="material-symbols-outlined text-xl" style={{ color: stat.color }}>{stat.icon}</span>
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{stat.label}</p>
+                                        <p className="text-xl font-black text-slate-800 tracking-tighter">{stat.value}</p>
+                                    </div>
+                                    <span className="material-symbols-outlined text-slate-200 text-sm group-hover:text-slate-400 transition-colors">arrow_right_alt</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                )}
+
+                    {/* MAP AREA */}
+                    <div className="flex-1 relative w-full h-full">
+                        <Map
+                            {...viewState}
+                            onMove={(evt: ViewStateChangeEvent) => setViewState(evt.viewState)}
+                            mapStyle="mapbox://styles/mapbox/light-v11"
+                            mapboxAccessToken={MAPBOX_TOKEN}
+                            style={{ width: '100%', height: '100%' }}
+                        >
+                            <NavigationControl position="top-right" />
+
+                            {fleetMarkers.map(truck => (
+                                <Marker
+                                    key={truck.id}
+                                    latitude={truck.lat}
+                                    longitude={truck.lng}
+                                >
+                                    <div className="group relative flex flex-col items-center cursor-pointer" onClick={() => {
+                                        const trip = logisticsTrips.find(t => t.truckId === truck.label);
+                                        if (trip) setSelectedTrip(trip);
+                                    }}>
+                                        <div className="absolute -top-12 bg-white text-slate-900 shadow-xl border border-slate-100 text-[10px] font-black px-3 py-1.5 rounded-xl opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 transition-all pointer-events-none whitespace-nowrap z-50">
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-2 h-2 rounded-full ${truck.status === 'in_transit' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                                {truck.label}
+                                            </div>
+                                        </div>
+
+                                        {/* Premium Cluster-style markers */}
+                                        <div className={`relative flex items-center justify-center transition-all duration-500 ${selectedTrip?.truckId === truck.label ? 'scale-125' : 'hover:scale-110'}`}>
+                                            <div className="absolute inset-0 bg-emerald-500/20 rounded-full animate-ping" />
+                                            <div className={`w-10 h-10 rounded-full border-4 border-white shadow-lg flex items-center justify-center font-black ${truck.status === 'in_transit' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'}`}>
+                                                {truck.id + 15}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </Marker>
+                            ))}
+                        </Map>
+
+                        {/* Floating Trip Summary Panel (if selected) */}
+                        {selectedTrip && (
+                            <motion.div
+                                initial={{ y: 100, opacity: 0 }}
+                                animate={{ y: 0, opacity: 1 }}
+                                className="absolute bottom-6 left-4 right-4 lg:bottom-auto lg:left-auto lg:top-6 lg:right-6 lg:w-96 bg-white/95 backdrop-blur-xl rounded-[2.5rem] border border-slate-200 shadow-2xl p-6 space-y-6 z-20"
+                            >
+                                <div className="flex justify-between items-start">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg">
+                                            <span className="material-symbols-outlined text-white">local_shipping</span>
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-black text-slate-900 uppercase">{selectedTrip.truckId || "FLEET-001"}</h4>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{selectedTrip.driver || "TRANSPORTER GROUP"}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => setSelectedTrip(null)} className="text-slate-400 hover:text-slate-600">
+                                        <span className="material-symbols-outlined">close</span>
+                                    </button>
+                                </div>
+
+                                <div className="space-y-6">
+                                    <div className="flex items-center justify-between">
+                                        <div className="text-center flex-1">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Origin</p>
+                                            <p className="text-[11px] font-black text-slate-800 uppercase truncate">{selectedTrip.origin.split(',')[0]}</p>
+                                            <p className="text-[8px] font-bold text-slate-400">{selectedTrip.origin.split(',')[1] || "Zambia"}</p>
+                                        </div>
+                                        <div className="flex-1 flex flex-col items-center px-4 relative">
+                                            <div className="w-full h-[1px] bg-slate-200 absolute top-1/2 -translate-y-1/2" />
+                                            <div className="w-2.5 h-2.5 bg-primary rounded-full relative z-10 border-4 border-white" />
+                                            <span className="text-[8px] font-black text-primary uppercase mt-1 relative z-10 bg-white px-2">In Transit</span>
+                                        </div>
+                                        <div className="text-center flex-1">
+                                            <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Destination</p>
+                                            <p className="text-[11px] font-black text-slate-800 uppercase truncate">{selectedTrip.destination.split(',')[0]}</p>
+                                            <p className="text-[8px] font-bold text-slate-400">{selectedTrip.destination.split(',')[1] || "Zambia"}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-6">
+                                        <div>
+                                            <p className="text-[9px] font-black text-slate-400 uppercase mb-1 flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-xs">calendar_today</span> Dispatched
+                                            </p>
+                                            <p className="text-[10px] font-bold text-slate-800">07:28 AM, 21 Apr</p>
+                                        </div>
+                                        <div>
+                                            <p className="text-[9px] font-black text-slate-400 uppercase mb-1 flex items-center gap-1.5">
+                                                <span className="material-symbols-outlined text-xs">update</span> ETA
+                                            </p>
+                                            <p className="text-[10px] font-bold text-emerald-600">02:45 PM, 24 Apr</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-50 rounded-2xl p-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-lg">📦</div>
+                                            <div>
+                                                <p className="text-[10px] font-black text-slate-800 uppercase">{selectedTrip.produce}</p>
+                                                <p className="text-[8px] font-bold text-slate-400 uppercase">{selectedTrip.weight} MT NET LOAD</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-xs font-black text-primary tracking-tighter">{selectedTrip.progress}%</p>
+                                            <div className="w-16 h-1 bg-slate-200 rounded-full overflow-hidden mt-1">
+                                                <div className="h-full bg-primary" style={{ width: `${selectedTrip.progress}%` }} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <button className="flex-1 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-lg hover:bg-slate-800 transition-all flex items-center justify-center gap-2">
+                                            <span className="material-symbols-outlined text-sm">mail</span>
+                                            Contact Driver
+                                        </button>
+                                        <button className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-slate-600 hover:bg-slate-200">
+                                            <span className="material-symbols-outlined">more_vert</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        )}
+                    </div>
+                </main>
             </div>
 
-            {/* Schedule Collection Modal */}
-            {showScheduleModal && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={() => setShowScheduleModal(false)}>
-                    <div className="bg-white rounded-t-[2.5rem] sm:rounded-[2rem] shadow-2xl w-full max-w-lg overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-300">
-                        <div className="flex items-center justify-between p-6 md:p-8 border-b border-slate-100"><h3 className="text-2xl font-black text-slate-900 tracking-tight">Schedule Dispatch</h3><button onClick={() => setShowScheduleModal(false)} className="w-10 h-10 flex items-center justify-center rounded-2xl bg-white border border-slate-200"><span className="material-symbols-outlined">close</span></button></div>
-                        <div className="p-6 md:p-8 space-y-8 overflow-y-auto max-h-[70vh]">
-                            <div className="space-y-2"><label className="text-[10px] font-black uppercase text-slate-400">Origin Point</label><input type="text" placeholder="ZED-882931" className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-widest" /></div>
-                            <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-[10px] font-black uppercase text-slate-400">Fleet Asset</label><select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black"><option>TRK-902 (FRA)</option></select></div><div className="space-y-2"><label className="text-[10px] font-black uppercase text-slate-400">Commodity</label><select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black"><option>Maize</option></select></div></div>
-                        </div>
-                        <div className="p-6 md:p-8 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row gap-4"><button onClick={() => setShowScheduleModal(false)} className="flex-1 bg-white border border-slate-200 py-4 rounded-xl text-[10px] font-black uppercase">Abort</button><button className="flex-1 bg-primary text-white py-4 rounded-xl text-[10px] font-black uppercase shadow-lg">Verify & Book</button></div>
-                    </div>
-                </div>
-            )}
-        </>
+            {/* Global Dispatch Button for floating accessibility if needed or just keep in topbar */}
+            <button
+                onClick={() => setShowScheduleModal(true)}
+                className="fixed bottom-8 right-8 w-16 h-16 bg-primary text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-50 group"
+            >
+                <span className="material-symbols-outlined text-2xl group-hover:rotate-12 transition-transform">add</span>
+            </button>
+
+            <AnimatePresence>
+                {showScheduleModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-slate-900/80 backdrop-blur-xl z-[100] flex items-center justify-center p-4"
+                        onClick={() => setShowScheduleModal(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                            animate={{ scale: 1, opacity: 1, y: 0 }}
+                            exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                            className="bg-white rounded-[3rem] shadow-2xl w-full max-w-xl overflow-hidden"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            <div className="p-10 space-y-8">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h3 className="text-3xl font-black text-slate-900 tracking-tighter">Assign Asset</h3>
+                                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Fleet Deployment Protocol</p>
+                                    </div>
+                                    <button onClick={() => setShowScheduleModal(false)} className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-slate-400 hover:bg-red-50 hover:text-red-500 transition-all">
+                                        <span className="material-symbols-outlined">close</span>
+                                    </button>
+                                </div>
+
+                                <div className="space-y-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Selected Request</label>
+                                            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                                <p className="text-sm font-black text-slate-900 uppercase truncate">{selectedTrip?.farmerName || "National Pool"}</p>
+                                                <p className="text-[10px] text-slate-500 font-bold uppercase mt-1">{selectedTrip?.produce} • {selectedTrip?.weight} MT</p>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Available Fleet</label>
+                                            <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all">
+                                                <option>TRK-902 (Lusaka)</option>
+                                                <option>TRK-551 (Ndola)</option>
+                                                <option>TRK-422 (Choma)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assign Driver</label>
+                                        <select className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all">
+                                            <option>Chanda Musonda</option>
+                                            <option>Sarah Zulu</option>
+                                            <option>Peter Nkonde</option>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-4 pt-4">
+                                    <button onClick={() => setShowScheduleModal(false)} className="flex-1 py-5 bg-slate-100 rounded-[1.5rem] font-black text-xs uppercase text-slate-500 hover:bg-slate-200 transition-all">Cancel</button>
+                                    <button
+                                        onClick={async () => {
+                                            if (selectedTrip) {
+                                                await zedagroApi.assignLogistics(selectedTrip.id, {
+                                                    truckId: "TRK-902",
+                                                    driverId: "driver_99",
+                                                    driver: "Chanda Musonda"
+                                                });
+                                                toast.success("Dispatch confirmed");
+                                                setShowScheduleModal(false);
+                                                fetchLogistics();
+                                            }
+                                        }}
+                                        className="flex-2 py-5 bg-[#0d1526] text-white rounded-[1.5rem] font-black text-xs uppercase tracking-[0.2em] shadow-2xl hover:bg-slate-900 transition-all flex items-center justify-center gap-3 group"
+                                    >
+                                        CONFIRM DISPATCH
+                                        <span className="material-symbols-outlined text-sm group-hover:translate-x-1 transition-transform">bolt</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
     );
 }

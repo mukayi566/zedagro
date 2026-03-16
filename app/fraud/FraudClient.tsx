@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Topbar from "../components/Topbar";
 import { FraudAlert } from "../lib/data";
 import { zedagroApi } from "../lib/api";
+import { useLayout } from "../components/LayoutContext";
 
 const severityConfig: Record<string, { label: string; color: string; bg: string; icon: string }> = {
     critical: { label: "Critical", color: "text-red-700", bg: "bg-red-100", icon: "report" },
@@ -19,6 +20,7 @@ const statusConfig: Record<string, { label: string; color: string }> = {
 };
 
 export default function FraudClient({ profile }: { profile: any }) {
+    const { isSidebarCollapsed } = useLayout();
     const [allAlerts, setAllAlerts] = useState<FraudAlert[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [filterSeverity, setFilterSeverity] = useState("All");
@@ -60,7 +62,7 @@ export default function FraudClient({ profile }: { profile: any }) {
             <div className="p-4 md:p-6 space-y-5 animate-fade-in">
                 {/* Loading Skeleton */}
                 {isLoading && (
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className={`grid grid-cols-2 ${isSidebarCollapsed ? "lg:grid-cols-4" : "xl:grid-cols-4"} gap-4 transition-all duration-300`}>
                         {[...Array(4)].map((_, i) => (
                             <div key={i} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 animate-pulse h-24" />
                         ))}
@@ -87,7 +89,7 @@ export default function FraudClient({ profile }: { profile: any }) {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className={`grid grid-cols-2 ${isSidebarCollapsed ? "lg:grid-cols-4" : "xl:grid-cols-4"} gap-4 transition-all duration-300`}>
                     {[
                         { label: "Critical", value: criticalCount, color: "text-red-600", bg: "bg-red-50", icon: "report" },
                         { label: "High Priority", value: highCount, color: "text-orange-600", bg: "bg-orange-50", icon: "warning" },

@@ -11,6 +11,7 @@ import {
     voucherRedemptionByMonth,
     inventoryBreakdown,
 } from "../lib/data";
+import { useLayout } from "../components/LayoutContext";
 import {
     AreaChart,
     Area,
@@ -85,6 +86,8 @@ const recentActivity = [
 
 export default function DashboardClient({ profile }: { profile: any }) {
     const role = profile?.role || 'farmer';
+    const { isSidebarCollapsed } = useLayout();
+
     return (
         <>
             <Topbar
@@ -111,7 +114,7 @@ export default function DashboardClient({ profile }: { profile: any }) {
 
 
                 {/* Primary Stat Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+                <div className={`grid grid-cols-1 sm:grid-cols-2 ${isSidebarCollapsed ? "lg:grid-cols-3 xl:grid-cols-5" : "lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5"} gap-4 transition-all duration-300`}>
                     {statCards.map((card, i) => (
                         <div
                             key={i}

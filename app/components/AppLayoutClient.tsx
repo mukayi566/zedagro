@@ -9,7 +9,7 @@ interface AppLayoutClientProps {
 }
 
 function AppLayoutContent({ children, userProfile }: AppLayoutClientProps) {
-    const { isSidebarOpen, closeSidebar } = useLayout();
+    const { isSidebarOpen, isSidebarCollapsed, closeSidebar } = useLayout();
 
     return (
         <div className="flex h-screen overflow-hidden bg-slate-50">
@@ -21,7 +21,12 @@ function AppLayoutContent({ children, userProfile }: AppLayoutClientProps) {
                 />
             )}
 
-            <Sidebar isOpen={isSidebarOpen} onClose={closeSidebar} user={userProfile} />
+            <Sidebar
+                isOpen={isSidebarOpen}
+                isCollapsed={isSidebarCollapsed}
+                onClose={closeSidebar}
+                user={userProfile}
+            />
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
                 <main className="flex-1 overflow-y-auto w-full relative">

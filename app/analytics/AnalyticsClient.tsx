@@ -8,6 +8,7 @@ import {
     voucherRedemptionByMonth,
     inventoryBreakdown,
 } from "../lib/data";
+import { useLayout } from "../components/LayoutContext";
 import {
     AreaChart,
     Area,
@@ -25,6 +26,7 @@ import {
 } from "recharts";
 
 export default function AnalyticsClient({ profile }: { profile: any }) {
+    const { isSidebarCollapsed } = useLayout();
     return (
         <>
             <Topbar
@@ -47,7 +49,7 @@ export default function AnalyticsClient({ profile }: { profile: any }) {
 
             <div className="p-4 md:p-6 space-y-6 animate-fade-in">
                 {/* KPI Banner Row */}
-                <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+                <div className={`grid grid-cols-2 md:grid-cols-4 ${isSidebarCollapsed ? "xl:grid-cols-8" : "xl:grid-cols-6 2xl:grid-cols-8"} gap-3 transition-all duration-300`}>
                     {[
                         { label: "Registered", value: "1.24M", unit: "Farmers", color: "text-primary" },
                         { label: "Verified", value: "4.2M", unit: "Hectares", color: "text-emerald-600" },

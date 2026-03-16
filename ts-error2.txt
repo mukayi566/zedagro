@@ -1,0 +1,1 @@
+app/logistics/LogisticsClient.tsx(9,42): error TS2724: '"react-map-gl/mapbox"' has no exported member named 'ViewChangeEvent'. Did you mean 'ViewStateChangeEvent'?

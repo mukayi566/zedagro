@@ -2,6 +2,8 @@
 
 import { useLayout } from "./LayoutContext";
 import Link from "next/link";
+import { useState, useTransition } from "react";
+import { logout } from "@/app/lib/auth/actions";
 
 interface TopbarProps {
     title: string;
@@ -16,6 +18,14 @@ interface TopbarProps {
 
 export default function Topbar({ title, subtitle, actions, user }: TopbarProps) {
     const { toggleSidebar } = useLayout();
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [isPending, startTransition] = useTransition();
+
+    const handleLogout = () => {
+        startTransition(async () => {
+            await logout();
+        });
+    };
 
     return (
         <header className="h-16 border-b border-slate-200 bg-white/90 backdrop-blur-md px-4 md:px-8 flex items-center justify-between z-20 sticky top-0">
@@ -64,17 +74,63 @@ export default function Topbar({ title, subtitle, actions, user }: TopbarProps) 
                     <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
                 </button>
 
-                {/* User Avatar */}
-                <Link href="/profile" className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-all">
-                    <div className="text-right hidden sm:block">
-                        <p className="text-sm font-semibold text-slate-800 leading-tight group-hover:text-primary transition-colors">
-                            {user?.first_name || 'User'}
-                        </p>
-                    </div>
-                    <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-primary text-white flex items-center justify-center font-bold text-xs md:text-sm shadow-sm border-2 border-primary/20 group-hover:scale-105 transition-transform">
-                        {(user?.first_name?.[0] || 'U')}{(user?.last_name?.[0] || '')}
-                    </div>
-                </Link>
+                {/* User Avatar & Profile Menu */}
+                <div className="relative profile-menu-container">
+                    <button
+                        onClick={() => setIsMenuOpen(!isMenuOpen)}
+                        className="flex items-center gap-2.5 cursor-pointer group hover:opacity-80 transition-all outline-none"
+                    >
+                        <div className="text-right hidden sm:block">
+                            <p className="text-sm font-semibold text-slate-800 leading-tight group-hover:text-primary transition-colors">
+                                {user?.first_name || 'User'}
+                            </p>
+                        </div>
+                        <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-primary text-white flex items-center justify-center font-bold text-xs md:text-sm shadow-sm border-2 border-primary/20 group-hover:scale-105 transition-transform">
+                            {(user?.first_name?.[0] || 'U')}{(user?.last_name?.[0] || '')}
+                        </div>
+                    </button>
+
+                    {/* Dropdown Menu */}
+                    {isMenuOpen && (
+                        <>
+                            <div
+                                className="fixed inset-0 z-30"
+                                onClick={() => setIsMenuOpen(false)}
+                            />
+                            <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-xl border border-slate-100 py-2 z-40 animate-fade-in origin-top-right">
+                                <Link
+                                    href="/profile"
+                                    onClick={() => setIsMenuOpen(false)}
+                                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-primary transition-colors"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">account_circle</span>
+                                    My Profile
+                                </Link>
+                                <Link
+                                    href="/settings"
+                                    onClick={() => setIsMenuOpen(false)}
+                                    className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-600 hover:bg-slate-50 hover:text-primary transition-colors"
+                                >
+                                    <span className="material-symbols-outlined text-[18px]">settings</span>
+                                    Settings
+                                </Link>
+                                <div className="h-px bg-slate-100 my-1 mx-2" />
+                                <button
+                                    onClick={handleLogout}
+                                    disabled={isPending}
+                                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                                >
+                                    {isPending ? (
+                                        <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <span className="material-symbols-outlined text-[18px]">logout</span>
+                                    )}
+                                    Logout
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </header>
     );

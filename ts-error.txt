@@ -1,0 +1,1 @@
+app/logistics/LogisticsClient.tsx(9,65): error TS2307: Cannot find module 'react-map-gl' or its corresponding type declarations.
